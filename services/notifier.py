@@ -11,20 +11,32 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime
-from typing import Final
+from io import BytesIO
+from typing import TYPE_CHECKING, Final
 
+import aiohttp
 from aiogram import Bot
+from aiogram.exceptions import TelegramBadRequest
+from aiogram.types import BufferedInputFile
+from PIL import Image
 
 from bot.responses import ITEMS_FOUND_CAPTION
+from core.config import settings
 from services.monitoring import MonitoringService
+
+if TYPE_CHECKING:
+    import redis.asyncio as redis
 
 logger: Final = logging.getLogger(__name__)
 
 
 class Notifier:  # noqa: D101 – simple name
-    def __init__(self, bot: Bot, service: MonitoringService):
+    def __init__(self, bot: Bot, service: MonitoringService, redis_client: redis.Redis):
         self._bot = bot
         self._svc = service
+        self._redis = redis_client
+        # Image cache TTL in seconds (converted from days)
+        self._image_cache_ttl = settings.IMAGE_CACHE_TTL_DAYS * 86400
 
     # ---------------------------------------------------------------------
     # Public API
@@ -78,13 +90,9 @@ class Notifier:  # noqa: D101 – simple name
                     if isinstance(item, dict)
                     else getattr(item, "image_url", None)
                 )
+
                 if image_url:
-                    await self._bot.send_photo(
-                        chat_id=task.chat_id,
-                        photo=image_url,
-                        caption=text,
-                        parse_mode="MarkdownV2",
-                    )
+                    await self._send_item_with_image(task.chat_id, image_url, text)
                 else:
                     await self._bot.send_message(
                         chat_id=task.chat_id, text=text, parse_mode="MarkdownV2"
@@ -94,6 +102,163 @@ class Notifier:  # noqa: D101 – simple name
             # Persist bookkeeping timestamps
             await self._svc.update_last_got_item(task.chat_id)
             await self._svc.update_last_updated(task)
+
+    async def _send_item_with_image(
+        self, chat_id: int, image_url: str, text: str
+    ) -> None:
+        """Send item with intelligent image handling and fallbacks.
+
+        Uses a multi-layer fallback strategy:
+        1. Try cached file_id (instant, no network)
+        2. Try direct URL (works for most CDNs)
+        3. Try fetching with browser headers (for restrictive CDNs)
+        4. Fall back to text message (always works)
+        """
+        # Layer 1: Try cached file_id
+        cached_file_id = await self._redis.get(f"photo:{image_url}")
+        if cached_file_id:
+            try:
+                await self._bot.send_photo(
+                    chat_id=chat_id,
+                    photo=cached_file_id,
+                    caption=text,
+                    parse_mode="MarkdownV2",
+                )
+                return  # Success!
+            except Exception:
+                # File_id expired or invalid, remove from cache
+                await self._redis.delete(f"photo:{image_url}")
+                logger.debug("Cached file_id expired, trying other methods")
+
+        # Layer 2: Try direct URL
+        try:
+            message = await self._bot.send_photo(
+                chat_id=chat_id,
+                photo=image_url,
+                caption=text,
+                parse_mode="MarkdownV2",
+            )
+            # Cache the file_id for future use
+            file_id = message.photo[-1].file_id
+            await self._redis.set(
+                f"photo:{image_url}", file_id, ex=self._image_cache_ttl
+            )
+            return  # Success!
+        except TelegramBadRequest as e:
+            logger.info("Direct URL failed: %s. Trying with custom headers...", e)
+
+        # Layer 3: Try fetching with browser-like headers
+        image_file = await self._fetch_image_with_headers(image_url)
+        if image_file:
+            try:
+                message = await self._bot.send_photo(
+                    chat_id=chat_id,
+                    photo=image_file,
+                    caption=text,
+                    parse_mode="MarkdownV2",
+                )
+                # Cache the file_id we just got
+                file_id = message.photo[-1].file_id
+                await self._redis.set(
+                    f"photo:{image_url}", file_id, ex=self._image_cache_ttl
+                )
+                return  # Success!
+            except Exception as e:
+                logger.warning("Failed to send fetched image: %s", e)
+
+        # Layer 4: Give up on image, send as text
+        logger.warning("All image methods failed for %s. Sending as text.", image_url)
+        await self._bot.send_message(
+            chat_id=chat_id, text=text, parse_mode="MarkdownV2"
+        )
+
+    async def _fetch_image_with_headers(self, url: str) -> BufferedInputFile | None:
+        """Fetch image with browser headers for CDN compatibility.
+
+        Automatically resizes images that exceed Telegram's dimension limits.
+        Returns BufferedInputFile if successful, None if failed.
+        """
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept": "image/webp,image/apng,image/*,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+        }
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)
+                ) as resp:
+                    if resp.status == 200:
+                        content_type = resp.headers.get("Content-Type", "")
+                        if "image" in content_type:
+                            image_data = await resp.read()
+
+                            # Resize if needed to meet Telegram's requirements
+                            resized_data = self._resize_image_if_needed(image_data)
+                            if resized_data:
+                                return BufferedInputFile(
+                                    resized_data, filename="image.jpg"
+                                )
+        except Exception as e:
+            logger.debug("Failed to fetch image with headers: %s", e)
+        return None
+
+    def _resize_image_if_needed(self, image_data: bytes) -> bytes | None:
+        """Resize image if it exceeds Telegram's dimension limits.
+
+        Telegram requirements:
+        - Width + Height <= 10,000 pixels
+        - Max dimension <= 10,000 pixels
+        - File size <= 10 MB
+
+        Returns resized image as JPEG bytes, or None if processing fails.
+        """
+        try:
+            img = Image.open(BytesIO(image_data))
+            width, height = img.size
+
+            # Check if resizing is needed
+            max_dimension = 10000
+            max_sum = 10000
+
+            if (
+                width + height <= max_sum
+                and width <= max_dimension
+                and height <= max_dimension
+            ):
+                # Image is fine, return original
+                return image_data
+
+            # Calculate new dimensions while preserving aspect ratio
+            # Target: width + height = 9500 (leaving some margin)
+            target_sum = 9500
+            ratio = width / height
+
+            # Solve: new_width + new_height = target_sum
+            # where new_width / new_height = ratio
+            new_height = int(target_sum / (ratio + 1))
+            new_width = int(new_height * ratio)
+
+            logger.info(
+                "Resizing image from %dx%d to %dx%d to meet Telegram limits",
+                width,
+                height,
+                new_width,
+                new_height,
+            )
+
+            # Resize with high-quality settings
+            img = img.convert("RGB")  # Ensure RGB mode for JPEG
+            img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+
+            # Save to bytes
+            output = BytesIO()
+            img.save(output, format="JPEG", quality=85, optimize=True)
+            return output.getvalue()
+
+        except Exception as e:
+            logger.warning("Failed to resize image: %s", e)
+            return None
 
 
 # ---------------------------- Formatting helpers -----------------------------

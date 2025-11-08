@@ -23,6 +23,8 @@ class Settings(BaseSettings):
 
     # DB settings
     DB_REMOVE_OLD_ITEMS_DATA_N_DAYS: int = 7
+    # Image cache TTL (in days) - should match DB_REMOVE_OLD_ITEMS_DATA_N_DAYS
+    IMAGE_CACHE_TTL_DAYS: int = DB_REMOVE_OLD_ITEMS_DATA_N_DAYS + 1
 
     # Redis settings for state persistence
     REDIS_HOST: str = "localhost"

@@ -54,7 +54,7 @@ async def telegram_main():
     # Get services from singleton container
     mon_service = get_monitoring_service()
     repo = get_repository()
-    notifier = Notifier(bot, mon_service)
+    notifier = Notifier(bot, mon_service, redis_client)
 
     # Register FSM handlers
     dp.message.register(
