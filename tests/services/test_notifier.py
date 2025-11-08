@@ -1,7 +1,10 @@
 import asyncio
 import unittest
+from io import BytesIO
 from unittest import IsolatedAsyncioTestCase
 from unittest.mock import AsyncMock, MagicMock, patch
+
+from PIL import Image
 
 from services.notifier import (
     Notifier,
@@ -228,3 +231,230 @@ class TestNotifier(IsolatedAsyncioTestCase):
                 with self.assertRaises(asyncio.CancelledError):
                     await n.run_periodically(1)
         check.assert_awaited()
+
+
+class TestImageCachingAndResizing(IsolatedAsyncioTestCase):
+    """Test image caching and resizing functionality."""
+
+    async def test_send_item_with_cached_file_id(self):
+        """Test that cached file_id is used when available."""
+        bot = AsyncMock()
+        svc = AsyncMock()
+        redis_client = AsyncMock()
+        redis_client.get.return_value = b"cached_file_id_123"
+
+        n = Notifier(bot, svc, redis_client)
+        await n._send_item_with_image(
+            chat_id=123, image_url="http://example.com/img.jpg", text="Test"
+        )
+
+        # Should use cached file_id
+        redis_client.get.assert_awaited_with("photo:http://example.com/img.jpg")
+        bot.send_photo.assert_awaited_once()
+        # Verify it used the cached file_id
+        call_args = bot.send_photo.call_args
+        self.assertEqual(call_args.kwargs["photo"], b"cached_file_id_123")
+        # Should not set new cache entry
+        redis_client.set.assert_not_awaited()
+
+    async def test_send_item_direct_url_success(self):
+        """Test successful direct URL send and caching."""
+        bot = AsyncMock()
+        svc = AsyncMock()
+        redis_client = AsyncMock()
+        redis_client.get.return_value = None  # No cache
+
+        # Mock successful photo send
+        mock_message = AsyncMock()
+        mock_message.photo = [MagicMock(file_id="new_file_id_456")]
+        bot.send_photo.return_value = mock_message
+
+        n = Notifier(bot, svc, redis_client)
+        await n._send_item_with_image(
+            chat_id=123, image_url="http://example.com/img.jpg", text="Test"
+        )
+
+        # Should try direct URL
+        bot.send_photo.assert_awaited_once()
+        call_args = bot.send_photo.call_args
+        self.assertEqual(call_args.kwargs["photo"], "http://example.com/img.jpg")
+
+        # Should cache the new file_id
+        redis_client.set.assert_awaited_once()
+        set_call = redis_client.set.call_args
+        self.assertEqual(set_call.args[0], "photo:http://example.com/img.jpg")
+        self.assertEqual(set_call.args[1], "new_file_id_456")
+        self.assertIn("ex", set_call.kwargs)  # TTL set
+
+    async def test_send_item_fallback_to_fetch_with_headers(self):
+        """Test fallback to fetching with custom headers when direct URL fails."""
+        bot = AsyncMock()
+        svc = AsyncMock()
+        redis_client = AsyncMock()
+        redis_client.get.return_value = None
+
+        # Mock direct URL failure, then success with fetched image
+        from aiogram.exceptions import TelegramBadRequest
+
+        bot.send_photo.side_effect = [
+            TelegramBadRequest(method="sendPhoto", message="Bad Request"),
+            AsyncMock(photo=[MagicMock(file_id="fetched_file_id_789")]),
+        ]
+
+        # Mock the fetch method to return valid image
+        mock_buffered_file = MagicMock()
+        with patch.object(
+            Notifier, "_fetch_image_with_headers", return_value=mock_buffered_file
+        ):
+            n = Notifier(bot, svc, redis_client)
+            await n._send_item_with_image(
+                chat_id=123, image_url="http://example.com/img.jpg", text="Test"
+            )
+
+        # Should have tried twice: direct URL, then fetched
+        self.assertEqual(bot.send_photo.await_count, 2)
+
+        # Should cache the fetched file_id
+        redis_client.set.assert_awaited_once()
+        set_call = redis_client.set.call_args
+        self.assertEqual(set_call.args[1], "fetched_file_id_789")
+
+    async def test_send_item_fallback_to_text(self):
+        """Test fallback to text message when all image methods fail."""
+        bot = AsyncMock()
+        svc = AsyncMock()
+        redis_client = AsyncMock()
+        redis_client.get.return_value = None
+
+        # Mock all photo sends failing
+        from aiogram.exceptions import TelegramBadRequest
+
+        bot.send_photo.side_effect = TelegramBadRequest(
+            method="sendPhoto", message="Bad Request"
+        )
+
+        # Mock fetch returning None (failed)
+        with patch.object(Notifier, "_fetch_image_with_headers", return_value=None):
+            n = Notifier(bot, svc, redis_client)
+            await n._send_item_with_image(
+                chat_id=123, image_url="http://example.com/img.jpg", text="Test message"
+            )
+
+        # Should have tried direct URL once
+        bot.send_photo.assert_awaited_once()
+
+        # Should fallback to text message
+        bot.send_message.assert_awaited_once()
+        call_args = bot.send_message.call_args
+        self.assertEqual(call_args.kwargs["text"], "Test message")
+
+    def test_resize_image_within_limits(self):
+        """Test that images within Telegram limits are not resized."""
+        bot = AsyncMock()
+        svc = AsyncMock()
+        redis_client = AsyncMock()
+        n = Notifier(bot, svc, redis_client)
+
+        # Create a small image (within limits)
+        img = Image.new("RGB", (1000, 1000), color="red")
+        output = BytesIO()
+        img.save(output, format="JPEG")
+        image_data = output.getvalue()
+
+        # Should return original data
+        result = n._resize_image_if_needed(image_data)
+        self.assertEqual(result, image_data)
+
+    def test_resize_image_exceeds_limits(self):
+        """Test that oversized images are resized."""
+        bot = AsyncMock()
+        svc = AsyncMock()
+        redis_client = AsyncMock()
+        n = Notifier(bot, svc, redis_client)
+
+        # Create an oversized image (4160x6240 = 10,400 > 10,000)
+        img = Image.new("RGB", (4160, 6240), color="blue")
+        output = BytesIO()
+        img.save(output, format="JPEG")
+        image_data = output.getvalue()
+
+        # Should resize
+        result = n._resize_image_if_needed(image_data)
+        self.assertIsNotNone(result)
+        self.assertNotEqual(result, image_data)  # Different from original
+
+        # Check resized dimensions
+        resized_img = Image.open(BytesIO(result))
+        width, height = resized_img.size
+        self.assertLessEqual(width + height, 10000)
+        self.assertLessEqual(width, 10000)
+        self.assertLessEqual(height, 10000)
+
+        # Check aspect ratio preserved (approximately)
+        original_ratio = 4160 / 6240
+        resized_ratio = width / height
+        self.assertAlmostEqual(original_ratio, resized_ratio, places=2)
+
+    def test_resize_image_preserves_quality(self):
+        """Test that resized images are valid JPEG."""
+        bot = AsyncMock()
+        svc = AsyncMock()
+        redis_client = AsyncMock()
+        n = Notifier(bot, svc, redis_client)
+
+        # Create oversized image
+        img = Image.new("RGB", (5000, 6000), color="green")
+        output = BytesIO()
+        img.save(output, format="JPEG")
+        image_data = output.getvalue()
+
+        # Resize
+        result = n._resize_image_if_needed(image_data)
+
+        # Should be valid JPEG
+        resized_img = Image.open(BytesIO(result))
+        self.assertEqual(resized_img.format, "JPEG")
+        self.assertEqual(resized_img.mode, "RGB")
+
+    def test_resize_image_handles_invalid_data(self):
+        """Test that invalid image data is handled gracefully."""
+        bot = AsyncMock()
+        svc = AsyncMock()
+        redis_client = AsyncMock()
+        n = Notifier(bot, svc, redis_client)
+
+        # Invalid image data
+        invalid_data = b"not an image"
+
+        # Should return None
+        result = n._resize_image_if_needed(invalid_data)
+        self.assertIsNone(result)
+
+    async def test_cached_file_id_expired(self):
+        """Test that expired cached file_id is removed and retried."""
+        bot = AsyncMock()
+        svc = AsyncMock()
+        redis_client = AsyncMock()
+        redis_client.get.return_value = b"expired_file_id"
+
+        # Mock cached file_id failing, then direct URL succeeding
+        from aiogram.exceptions import TelegramBadRequest
+
+        mock_message = AsyncMock()
+        mock_message.photo = [MagicMock(file_id="new_file_id")]
+        bot.send_photo.side_effect = [
+            TelegramBadRequest(method="sendPhoto", message="Bad Request"),
+            mock_message,
+        ]
+
+        n = Notifier(bot, svc, redis_client)
+        await n._send_item_with_image(
+            chat_id=123, image_url="http://example.com/img.jpg", text="Test"
+        )
+
+        # Should delete expired cache
+        redis_client.delete.assert_awaited_once_with("photo:http://example.com/img.jpg")
+
+        # Should try again with direct URL and cache new file_id
+        self.assertEqual(bot.send_photo.await_count, 2)
+        redis_client.set.assert_awaited_once()
