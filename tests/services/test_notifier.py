@@ -157,10 +157,11 @@ class TestNotifier(IsolatedAsyncioTestCase):
     async def test_check_and_send_items_none(self):
         bot = AsyncMock()
         svc = AsyncMock()
+        redis_client = AsyncMock()
         svc.pending_tasks.return_value = [MagicMock(chat_id="1", name="n", id=7)]
         svc.items_to_send.return_value = []
 
-        n = Notifier(bot, svc)
+        n = Notifier(bot, svc, redis_client)
         await n._check_and_send_items()
 
         svc.update_last_updated.assert_awaited()  # called for empty items
@@ -170,6 +171,8 @@ class TestNotifier(IsolatedAsyncioTestCase):
     async def test_check_and_send_items_with_items(self):
         bot = AsyncMock()
         svc = AsyncMock()
+        redis_client = AsyncMock()
+        redis_client.get.return_value = None  # No cached file_ids
         task = MagicMock(chat_id="1", name="n", id=7)
         items = [
             {
@@ -192,7 +195,12 @@ class TestNotifier(IsolatedAsyncioTestCase):
         svc.pending_tasks.return_value = [task]
         svc.items_to_send.return_value = items
 
-        n = Notifier(bot, svc)
+        # Mock successful photo send response with file_id
+        mock_message = AsyncMock()
+        mock_message.photo = [MagicMock(file_id="cached_file_id_123")]
+        bot.send_photo.return_value = mock_message
+
+        n = Notifier(bot, svc, redis_client)
         with patch("asyncio.sleep", new=AsyncMock()) as _:
             await n._check_and_send_items()
 
@@ -209,7 +217,8 @@ class TestNotifier(IsolatedAsyncioTestCase):
     async def test_run_periodically_breaks(self):
         bot = AsyncMock()
         svc = AsyncMock()
-        n = Notifier(bot, svc)
+        redis_client = AsyncMock()
+        n = Notifier(bot, svc, redis_client)
 
         async def fake_sleep(_):
             raise asyncio.CancelledError
