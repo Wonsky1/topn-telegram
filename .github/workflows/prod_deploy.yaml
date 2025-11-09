@@ -43,7 +43,7 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.USERNAME }}/${{ env.IMAGE_NAME }}:prod
           build-args: |
             BOT_TOKEN=${{ secrets.PROD_BOT_TOKEN }}
-            CHAT_IDS=${{ secrets.PROD_CHAT_IDS }}
+            ADMIN_IDS=${{ secrets.PROD_ADMIN_IDS }}
             REDIS_HOST=${{ secrets.PROD_REDIS_HOST }}
             REDIS_PORT=${{ secrets.PROD_REDIS_PORT }}
             TOPN_DB_BASE_URL=${{ secrets.PROD_TOPN_DB_BASE_URL }}

@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     )
 
     BOT_TOKEN: str
-    CHAT_IDS: str
+    ADMIN_IDS: str = ""  # Comma-separated list of admin chat IDs
 
     CHECK_FREQUENCY_SECONDS: int = 10
 
@@ -29,6 +29,20 @@ class Settings(BaseSettings):
     # Redis settings for state persistence
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
+
+    def get_admin_ids(self) -> list[str]:
+        """Parse and return list of admin IDs."""
+        if not self.ADMIN_IDS:
+            return []
+        return [
+            admin_id.strip()
+            for admin_id in self.ADMIN_IDS.split(",")
+            if admin_id.strip()
+        ]
+
+    def is_admin(self, chat_id: int | str) -> bool:
+        """Check if the given chat_id is an admin."""
+        return str(chat_id) in self.get_admin_ids()
 
 
 settings = Settings()
