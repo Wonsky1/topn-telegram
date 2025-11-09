@@ -4,6 +4,6 @@ validators==0.35.0
 pytz==2025.2
 redis==7.0.1
 httpx==0.28.1
-psycopg2-binary==2.9.10
+psycopg2-binary==2.9.11
 aiohttp==3.11.0
 Pillow==11.0.0
