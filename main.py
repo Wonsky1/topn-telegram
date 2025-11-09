@@ -10,8 +10,9 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.redis import RedisStorage
 
 from bot.fsm import StartMonitoringForm, StatusForm, StopMonitoringForm
+from bot.handlers import admin as admin_handlers
 from bot.handlers import monitoring as monitoring_handlers
-from bot.keyboards import MAIN_MENU_KEYBOARD
+from bot.keyboards import get_main_menu_keyboard
 from core.config import settings
 from core.dependencies import get_monitoring_service, get_repository
 
@@ -45,6 +46,11 @@ redis_client = redis.Redis(
 storage = RedisStorage(redis_client)
 dp = Dispatcher(storage=storage)
 
+# Make redis_client available to dependencies
+from core import dependencies
+
+dependencies.redis_client = redis_client
+
 
 async def telegram_main():
     # Initialize bot
@@ -71,8 +77,9 @@ async def telegram_main():
     @dp.message(CommandStart())
     async def cmd_start(message: types.Message):
         logger.info(f"Start command received from chat_id {message.chat.id}")
+        keyboard = get_main_menu_keyboard(message.chat.id)
         await message.answer(
-            "Hello Yana, this is a bot for you <3", reply_markup=MAIN_MENU_KEYBOARD
+            "Hello Yana, this is a bot for you <3", reply_markup=keyboard
         )
 
     # Text button handlers
@@ -88,6 +95,31 @@ async def telegram_main():
     async def status_button(message: types.Message, state: FSMContext):
         await monitoring_handlers.status_command(message, state)
 
+    # Admin panel handlers
+    @dp.message(lambda message: message.text == "🔧 Admin Panel")
+    async def admin_panel_button(message: types.Message, state: FSMContext):
+        await admin_handlers.admin_panel_menu(message, state)
+
+    @dp.message(lambda message: message.text == "📊 System Status")
+    async def system_status_button(message: types.Message, state: FSMContext):
+        await admin_handlers.system_status(message, state)
+
+    @dp.message(lambda message: message.text == "👥 View Users")
+    async def view_users_button(message: types.Message, state: FSMContext):
+        await admin_handlers.view_all_users(message, state)
+
+    @dp.message(lambda message: message.text == "📋 View All Tasks")
+    async def view_tasks_button(message: types.Message, state: FSMContext):
+        await admin_handlers.view_all_tasks(message, state)
+
+    @dp.message(lambda message: message.text == "⚠️ Recent Errors")
+    async def recent_errors_button(message: types.Message, state: FSMContext):
+        await admin_handlers.view_recent_errors(message, state)
+
+    @dp.message(lambda message: message.text == "⬅️ Back to Menu")
+    async def back_to_menu_button(message: types.Message, state: FSMContext):
+        await admin_handlers.back_to_main_menu(message, state)
+
     # Start periodic check for new items
     logger.info("Starting periodic check for new items...")
     asyncio.create_task(notifier.run_periodically(settings.CHECK_FREQUENCY_SECONDS))
@@ -97,16 +129,33 @@ async def telegram_main():
 
     # Start polling
     logger.info("Starting bot polling...")
-    chat_id = settings.CHAT_IDS
+    admin_ids = settings.get_admin_ids()
+
     try:
-        await bot.send_message(chat_id=chat_id, text="BOT WAS STARTED")
-        logger.info(f"Bot started notification sent to chat_id {chat_id}")
+        # Notify all admins that bot started
+        for admin_id in admin_ids:
+            try:
+                await bot.send_message(chat_id=admin_id, text="🤖 BOT WAS STARTED")
+                logger.info(f"Bot started notification sent to admin {admin_id}")
+            except Exception as e:
+                logger.error(
+                    f"Failed to send start notification to admin {admin_id}: {e}"
+                )
+
         await dp.start_polling(bot)
     except Exception as e:
         logger.critical(f"Fatal error in telegram_main: {e}", exc_info=True)
     finally:
         logger.info("Bot stopped, sending notification")
-        await bot.send_message(chat_id=chat_id, text="BOT WAS STOPPED")
+        # Notify all admins that bot stopped
+        for admin_id in admin_ids:
+            try:
+                await bot.send_message(chat_id=admin_id, text="🛑 BOT WAS STOPPED")
+                logger.info(f"Bot stopped notification sent to admin {admin_id}")
+            except Exception as e:
+                logger.error(
+                    f"Failed to send stop notification to admin {admin_id}: {e}"
+                )
 
 
 if __name__ == "__main__":

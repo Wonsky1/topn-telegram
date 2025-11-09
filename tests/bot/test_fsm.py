@@ -45,19 +45,36 @@ from aiogram import types
 
 
 class TestKeyboards(IsolatedAsyncioTestCase):
-    async def test_main_menu_keyboard_structure(self):
-        from bot.keyboards import MAIN_MENU_KEYBOARD
+    async def test_main_menu_keyboard_structure_non_admin(self):
+        from bot.keyboards import get_main_menu_keyboard
 
-        self.assertIsInstance(MAIN_MENU_KEYBOARD, types.ReplyKeyboardMarkup)
+        # Test for non-admin user
+        keyboard = get_main_menu_keyboard(chat_id=999999)
+        self.assertIsInstance(keyboard, types.ReplyKeyboardMarkup)
         # Two rows: [Start, Stop], [Status]
-        rows = MAIN_MENU_KEYBOARD.keyboard
+        rows = keyboard.keyboard
         self.assertEqual(len(rows), 2)
         self.assertEqual(len(rows[0]), 2)
         self.assertEqual(rows[0][0].text, "Start monitoring")
         self.assertEqual(rows[0][1].text, "Stop monitoring")
         self.assertEqual(len(rows[1]), 1)
         self.assertEqual(rows[1][0].text, "Status")
-        self.assertTrue(MAIN_MENU_KEYBOARD.resize_keyboard)
+        self.assertTrue(keyboard.resize_keyboard)
+
+    async def test_main_menu_keyboard_structure_admin(self):
+        from unittest.mock import patch
+
+        from bot.keyboards import get_main_menu_keyboard
+        from core import config
+
+        # Mock the Settings.is_admin method to return True
+        with patch.object(config.Settings, "is_admin", return_value=True):
+            keyboard = get_main_menu_keyboard(chat_id=123456)
+            self.assertIsInstance(keyboard, types.ReplyKeyboardMarkup)
+            # Three rows: [Start, Stop], [Status], [Admin Panel]
+            rows = keyboard.keyboard
+            self.assertEqual(len(rows), 3)
+            self.assertEqual(rows[2][0].text, "🔧 Admin Panel")
 
     async def test_get_monitoring_selection_keyboard(self):
         from bot.keyboards import BACK_BUTTON, get_monitoring_selection_keyboard
@@ -94,9 +111,10 @@ class TestMonitoringHandlers(IsolatedAsyncioTestCase):
     async def test_process_url_back(self):
         self.message.text = self.mhandlers.BACK_BUTTON.text
         await self.mhandlers.process_url(self.message, self.state)
-        self.message.answer.assert_awaited_with(
-            self.mhandlers.BACK_TO_MENU, reply_markup=self.mhandlers.MAIN_MENU_KEYBOARD
-        )
+        # Check that answer was called with BACK_TO_MENU and some keyboard
+        call_args = self.message.answer.await_args
+        self.assertEqual(call_args[0][0], self.mhandlers.BACK_TO_MENU)
+        self.assertIn("reply_markup", call_args[1])
         self.state.clear.assert_awaited()
 
     async def test_process_url_invalid(self):
@@ -158,9 +176,10 @@ class TestMonitoringHandlers(IsolatedAsyncioTestCase):
         # back
         self.message.text = self.mhandlers.BACK_BUTTON.text
         await self.mhandlers.process_name(self.message, self.state)
-        self.message.answer.assert_awaited_with(
-            self.mhandlers.BACK_TO_MENU, reply_markup=self.mhandlers.MAIN_MENU_KEYBOARD
-        )
+        # Check that answer was called with BACK_TO_MENU and some keyboard
+        call_args = self.message.answer.await_args
+        self.assertEqual(call_args[0][0], self.mhandlers.BACK_TO_MENU)
+        self.assertIn("reply_markup", call_args[1])
         self.state.clear.assert_awaited()
 
         # invalid length
