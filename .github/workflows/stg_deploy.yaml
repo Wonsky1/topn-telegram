@@ -43,7 +43,7 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.USERNAME }}/${{ env.IMAGE_NAME }}:stg
           build-args: |
             BOT_TOKEN=${{ secrets.STG_BOT_TOKEN }}
-            CHAT_IDS=${{ secrets.STG_CHAT_IDS }}
+            ADMIN_IDS=${{ secrets.STG_ADMIN_IDS }}
             REDIS_HOST=${{ secrets.STG_REDIS_HOST }}
             REDIS_PORT=${{ secrets.STG_REDIS_PORT }}
             TOPN_DB_BASE_URL=${{ secrets.STG_TOPN_DB_BASE_URL }}

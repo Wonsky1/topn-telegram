@@ -7,7 +7,7 @@ from aiogram.fsm.context import FSMContext
 from bot.fsm import StartMonitoringForm, StatusForm, StopMonitoringForm
 from bot.keyboards import (
     BACK_BUTTON,
-    MAIN_MENU_KEYBOARD,
+    get_main_menu_keyboard,
     get_monitoring_selection_keyboard,
 )
 from bot.responses import (
@@ -51,7 +51,8 @@ async def process_url(message: types.Message, state: FSMContext):
     validator = UrlValidator()
 
     if message.text.strip() == BACK_BUTTON.text:
-        await message.answer(BACK_TO_MENU, reply_markup=MAIN_MENU_KEYBOARD)
+        keyboard = get_main_menu_keyboard(message.chat.id)
+        await message.answer(BACK_TO_MENU, reply_markup=keyboard)
         await state.clear()
         return
 
@@ -90,7 +91,8 @@ async def process_name(message: types.Message, state: FSMContext):
     monitoring_service = get_monitoring_service()
 
     if message.text.strip() == BACK_BUTTON.text:
-        await message.answer(BACK_TO_MENU, reply_markup=MAIN_MENU_KEYBOARD)
+        keyboard = get_main_menu_keyboard(message.chat.id)
+        await message.answer(BACK_TO_MENU, reply_markup=keyboard)
         await state.clear()
         return
 
@@ -108,10 +110,11 @@ async def process_name(message: types.Message, state: FSMContext):
         await monitoring_service.add_monitoring(spec)
 
         logger.info(f"Monitoring '{name}' created for chat_id {message.chat.id}")
+        keyboard = get_main_menu_keyboard(message.chat.id)
         await message.answer(
             MONITORING_CREATED.format(name=name, url=url),
             parse_mode="Markdown",
-            reply_markup=MAIN_MENU_KEYBOARD,
+            reply_markup=keyboard,
         )
     except ValueError as e:
         # Handle validation errors from the service
@@ -163,7 +166,8 @@ async def process_stop_choice(message: types.Message, state: FSMContext):
     name = message.text.strip()
     if name == BACK_BUTTON.text:
         # Go back to main menu
-        await message.answer("Back to main menu", reply_markup=MAIN_MENU_KEYBOARD)
+        keyboard = get_main_menu_keyboard(message.chat.id)
+        await message.answer("Back to main menu", reply_markup=keyboard)
         await state.clear()
         return
 
@@ -175,10 +179,11 @@ async def process_stop_choice(message: types.Message, state: FSMContext):
     try:
         await monitoring_service.remove_monitoring(str(message.chat.id), name)
         logger.info(f"Monitoring '{name}' deleted for chat_id {message.chat.id}")
+        keyboard = get_main_menu_keyboard(message.chat.id)
         await message.answer(
             STOPPED.format(name=name),
             parse_mode="Markdown",
-            reply_markup=MAIN_MENU_KEYBOARD,
+            reply_markup=keyboard,
         )
     except ValueError as e:
         if "not found" in str(e).lower():
@@ -221,7 +226,8 @@ async def process_status_choice(message: types.Message, state: FSMContext):
 
     name = message.text.strip()
     if name == BACK_BUTTON.text:
-        await message.answer("Back to main menu", reply_markup=MAIN_MENU_KEYBOARD)
+        keyboard = get_main_menu_keyboard(message.chat.id)
+        await message.answer("Back to main menu", reply_markup=keyboard)
         await state.clear()
         return
 
@@ -231,7 +237,8 @@ async def process_status_choice(message: types.Message, state: FSMContext):
 
         if task:
             await _send_status(message, task)
-            await message.answer(MAIN_MENU, reply_markup=MAIN_MENU_KEYBOARD)
+            keyboard = get_main_menu_keyboard(message.chat.id)
+            await message.answer(MAIN_MENU, reply_markup=keyboard)
         else:
             await message.answer(UNKNOWN_MONITORING)
             return
