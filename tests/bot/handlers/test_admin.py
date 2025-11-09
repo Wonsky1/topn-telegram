@@ -122,12 +122,19 @@ class TestAdminHandlers(IsolatedAsyncioTestCase):
             mock_psutil.disk_usage.return_value = mock_disk
             mock_psutil.cpu_percent.return_value = 15.5
 
-            # Mock redis
-            with patch("bot.handlers.admin.redis_client") as mock_redis:
-                mock_redis.ping = AsyncMock()
-                mock_redis.dbsize = AsyncMock(return_value=100)
-                mock_redis.keys = AsyncMock(return_value=["photo:1", "photo:2"])
+            # Mock redis - create a mock redis_client and inject it into core.dependencies
+            mock_redis = MagicMock()
+            mock_redis.ping = AsyncMock()
+            mock_redis.dbsize = AsyncMock(return_value=100)
+            mock_redis.keys = AsyncMock(return_value=["photo:1", "photo:2"])
 
+            # Patch the import statement inside the function
+            import core.dependencies
+
+            original_redis = getattr(core.dependencies, "redis_client", None)
+            core.dependencies.redis_client = mock_redis
+
+            try:
                 await self.ahandlers.system_status(self.message, self.state)
 
                 # Should have called answer twice (loading + status)
@@ -144,6 +151,12 @@ class TestAdminHandlers(IsolatedAsyncioTestCase):
                 self.assertIn("CPU Usage:", status_text)
                 self.assertIn("Memory:", status_text)
                 self.assertIn("Disk:", status_text)
+            finally:
+                # Restore original
+                if original_redis is not None:
+                    core.dependencies.redis_client = original_redis
+                elif hasattr(core.dependencies, "redis_client"):
+                    delattr(core.dependencies, "redis_client")
 
     async def test_system_status_handles_errors(self):
         """Test system status handles errors gracefully."""
@@ -384,5 +397,5 @@ class TestAdminAccessControl(IsolatedAsyncioTestCase):
                 await handler(self.message, self.state)
                 self.message.answer.assert_awaited()
                 call_args = self.message.answer.await_args
-                # All should show access denied
-                self.assertIn("Access denied", call_args[0][0].lower())
+                # All should show access denied (case-insensitive check)
+                self.assertIn("access denied", call_args[0][0].lower())
