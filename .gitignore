@@ -168,3 +168,4 @@ worker.env
 migrations.env
 db_service.env
 postgres.env
+bot.log*

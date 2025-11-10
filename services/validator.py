@@ -43,7 +43,11 @@ class UrlValidator(UrlValidatorProtocol):
         return url.startswith(self._OLX_PREFIXES)
 
     def normalize(self, url: str) -> str:
-        """Convert any supported variant to https://www.olx.pl/... and sort query parameters."""
+        """Convert any supported variant to https://www.olx.pl/... and sort query parameters.
+
+        Also automatically sets search[order] to created_at:desc (newest first) regardless
+        of the original sorting parameter in the URL.
+        """
         if url.startswith("https://m.olx.pl/"):
             url = "https://www.olx.pl/" + url[len("https://m.olx.pl/") :]
         elif url.startswith("https://www.m.olx.pl/"):
@@ -54,6 +58,13 @@ class UrlValidator(UrlValidatorProtocol):
         parsed = urllib.parse.urlparse(url)
         if parsed.query:
             qsl = urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
+
+            # Force sorting to be newest first (created_at:desc)
+            # Remove any existing search[order] parameter
+            qsl = [(k, v) for k, v in qsl if k != "search[order]"]
+            # Add the search[order]=created_at:desc parameter
+            qsl.append(("search[order]", "created_at:desc"))
+
             qsl.sort()
             query = urllib.parse.urlencode(qsl, doseq=True)
             url = urllib.parse.urlunparse(parsed._replace(query=query))
