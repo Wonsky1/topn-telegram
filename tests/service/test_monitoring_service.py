@@ -21,7 +21,32 @@ class TestMonitoringService(IsolatedAsyncioTestCase):
         self.repo.task_exists.return_value = False
         spec = MonitoringSpec(chat_id="1", name="ok", url="https://www.olx.pl/")
         await self.svc.add_monitoring(spec)
-        self.repo.create_task.assert_awaited_with("1", "ok", "https://www.olx.pl/")
+        self.repo.create_task.assert_awaited_with(
+            chat_id="1",
+            name="ok",
+            url="https://www.olx.pl/",
+            city_id=None,
+            allowed_district_ids=None,
+        )
+
+    async def test_add_monitoring_with_city_and_districts(self):
+        self.repo.has_url.return_value = False
+        self.repo.task_exists.return_value = False
+        spec = MonitoringSpec(
+            chat_id="1",
+            name="ok",
+            url="https://www.olx.pl/",
+            city_id=5,
+            allowed_district_ids=[1, 2, 3],
+        )
+        await self.svc.add_monitoring(spec)
+        self.repo.create_task.assert_awaited_with(
+            chat_id="1",
+            name="ok",
+            url="https://www.olx.pl/",
+            city_id=5,
+            allowed_district_ids=[1, 2, 3],
+        )
 
     async def test_add_monitoring_bad_name(self):
         for bad in ("", "/cmd", "x" * 65):

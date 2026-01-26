@@ -179,6 +179,52 @@ class TopnDbClient:
             "DELETE", f"/api/v1/items/cleanup/older-than/{days}"
         )
 
+    # ==================== Cities ====================
+
+    async def get_all_cities(self) -> Dict[str, Any]:
+        """Get all cities."""
+        return await self._make_request("GET", "/api/v1/cities/")
+
+    async def get_city_by_id(self, city_id: int) -> Dict[str, Any]:
+        """Get city by ID."""
+        return await self._make_request("GET", f"/api/v1/cities/{city_id}")
+
+    async def get_city_by_normalized_name(
+        self, name_normalized: str
+    ) -> Optional[Dict[str, Any]]:
+        """Get city by normalized name.
+
+        Returns None if city not found (404).
+        """
+        try:
+            return await self._make_request(
+                "GET", f"/api/v1/cities/by-name/{name_normalized}"
+            )
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                return None
+            raise
+
+    async def get_city_with_districts(self, city_id: int) -> Dict[str, Any]:
+        """Get city with all its districts."""
+        return await self._make_request(
+            "GET", f"/api/v1/cities/{city_id}/with-districts"
+        )
+
+    # ==================== Districts ====================
+
+    async def get_all_districts(self) -> Dict[str, Any]:
+        """Get all districts."""
+        return await self._make_request("GET", "/api/v1/districts/")
+
+    async def get_district_by_id(self, district_id: int) -> Dict[str, Any]:
+        """Get district by ID."""
+        return await self._make_request("GET", f"/api/v1/districts/{district_id}")
+
+    async def get_districts_by_city_id(self, city_id: int) -> Dict[str, Any]:
+        """Get all districts for a specific city."""
+        return await self._make_request("GET", f"/api/v1/cities/{city_id}/districts")
+
     # ==================== Legacy Methods ====================
 
     async def add_item(self, item_data: Dict[str, Any]) -> Dict[str, Any]:
