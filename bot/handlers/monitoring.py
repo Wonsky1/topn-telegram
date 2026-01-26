@@ -1,5 +1,6 @@
 import logging
 from datetime import datetime
+from typing import Optional
 
 from aiogram import types
 from aiogram.fsm.context import FSMContext
@@ -10,9 +11,11 @@ from bot.keyboards import (
     get_main_menu_keyboard,
     get_monitoring_selection_keyboard,
 )
+from bot.keyboards_inline import DistrictItem, build_districts_keyboard
 from bot.responses import (
     BACK_TO_MENU,
     CHOOSE_MONITORING,
+    DISTRICTS_FOUND,
     DUPLICATE_NAME,
     DUPLICATE_URL,
     ERROR_CREATING,
@@ -21,6 +24,7 @@ from bot.responses import (
     INVALID_URL,
     MAIN_MENU,
     MONITORING_CREATED,
+    MONITORING_CREATED_WITH_DISTRICTS,
     NO_MONITORINGS,
     RESERVED_NAME,
     SEND_NAME,
@@ -29,9 +33,11 @@ from bot.responses import (
     UNKNOWN_MONITORING,
     URL_NOT_REACHABLE,
 )
+from clients import topn_db_client
 from core.dependencies import get_monitoring_service
 from services.monitoring import MonitoringSpec
 from services.validator import UrlValidator
+from tools.url_parser import extract_city_from_olx_url
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +52,7 @@ async def cmd_start_monitoring(message: types.Message, state: FSMContext):
 
 
 async def process_url(message: types.Message, state: FSMContext):
+    """Process URL input and optionally show district selection."""
     # Get the monitoring service from singleton container
     monitoring_service = get_monitoring_service()
     validator = UrlValidator()
@@ -80,13 +87,97 @@ async def process_url(message: types.Message, state: FSMContext):
         await message.answer(ERROR_CREATING)
         return
 
+    # Save URL to state
     await state.update_data(url=url)
+
+    # Try to extract city from URL and offer district filtering
+    city_slug = extract_city_from_olx_url(url)
+    logger.info(f"Extracted city slug from URL: '{city_slug}'")
+
+    if city_slug:
+        city_data = await _try_get_city_with_districts(city_slug)
+        logger.info(f"City data from DB: {city_data is not None}")
+
+        if city_data:
+            city_id = city_data["id"]
+            city_name = city_data["name_raw"]
+            districts_data = city_data.get("districts", [])
+
+            # Filter out "Unknown" district
+            districts_data = [
+                d
+                for d in districts_data
+                if d.get("name_normalized", "").lower() != "unknown"
+            ]
+
+            if districts_data:
+                # Save city info and districts to state
+                await state.update_data(
+                    city_id=city_id,
+                    city_name=city_name,
+                    districts_data=districts_data,
+                    selected_district_ids=[],
+                    districts_page=0,
+                )
+
+                # Build district keyboard
+                districts = [
+                    DistrictItem(id=d["id"], name=d["name_raw"]) for d in districts_data
+                ]
+                keyboard = build_districts_keyboard(districts, set(), 0)
+
+                # Show district selection
+                await state.set_state(StartMonitoringForm.districts)
+                await message.answer(
+                    DISTRICTS_FOUND.format(count=len(districts), city=city_name),
+                    parse_mode="Markdown",
+                    reply_markup=keyboard,
+                )
+                return
+            else:
+                logger.info(f"No districts found for city '{city_name}'")
+        else:
+            logger.info(f"City '{city_slug}' not found in database")
+
+    # No city found or no districts — proceed directly to name
     await state.set_state(StartMonitoringForm.name)
     kb = types.ReplyKeyboardMarkup(keyboard=[[BACK_BUTTON]], resize_keyboard=True)
     await message.answer(SEND_NAME, reply_markup=kb)
 
 
+async def _try_get_city_with_districts(city_slug: str) -> Optional[dict]:
+    """Try to get city with districts from API.
+
+    Args:
+        city_slug: Normalized city name (e.g., "warszawa")
+
+    Returns:
+        City dict with districts or None if not found
+    """
+    try:
+        # First get city by normalized name
+        logger.info(f"Looking up city by normalized name: '{city_slug}'")
+        city = await topn_db_client.get_city_by_normalized_name(city_slug)
+
+        if not city:
+            logger.info(f"City '{city_slug}' not found in database")
+            return None
+
+        logger.info(f"Found city: id={city['id']}, name={city.get('name_raw')}")
+
+        # Then get city with districts
+        city_with_districts = await topn_db_client.get_city_with_districts(city["id"])
+        districts_count = len(city_with_districts.get("districts", []))
+        logger.info(f"City has {districts_count} districts")
+
+        return city_with_districts
+    except Exception as e:
+        logger.error(f"Error fetching city '{city_slug}': {e}", exc_info=True)
+        return None
+
+
 async def process_name(message: types.Message, state: FSMContext):
+    """Process name input and create monitoring task."""
     # Get the monitoring service from singleton container
     monitoring_service = get_monitoring_service()
 
@@ -104,18 +195,47 @@ async def process_name(message: types.Message, state: FSMContext):
     data = await state.get_data()
     url = data["url"]
 
+    # Get optional city and district data from state
+    city_id: Optional[int] = data.get("city_id")
+    selected_district_ids: list[int] = data.get("selected_district_ids", [])
+
     try:
-        # Create monitoring spec and add it using the service
-        spec = MonitoringSpec(chat_id=str(message.chat.id), name=name, url=url)
+        # Create monitoring spec with location filtering
+        spec = MonitoringSpec(
+            chat_id=str(message.chat.id),
+            name=name,
+            url=url,
+            city_id=city_id,
+            allowed_district_ids=(
+                selected_district_ids if selected_district_ids else None
+            ),
+        )
         await monitoring_service.add_monitoring(spec)
 
-        logger.info(f"Monitoring '{name}' created for chat_id {message.chat.id}")
-        keyboard = get_main_menu_keyboard(message.chat.id)
-        await message.answer(
-            MONITORING_CREATED.format(name=name, url=url),
-            parse_mode="Markdown",
-            reply_markup=keyboard,
+        logger.info(
+            f"Monitoring '{name}' created for chat_id {message.chat.id} "
+            f"(city_id={city_id}, districts={len(selected_district_ids)})"
         )
+
+        keyboard = get_main_menu_keyboard(message.chat.id)
+
+        # Show appropriate success message
+        if selected_district_ids:
+            await message.answer(
+                MONITORING_CREATED_WITH_DISTRICTS.format(
+                    name=name,
+                    url=url,
+                    district_count=len(selected_district_ids),
+                ),
+                parse_mode="Markdown",
+                reply_markup=keyboard,
+            )
+        else:
+            await message.answer(
+                MONITORING_CREATED.format(name=name, url=url),
+                parse_mode="Markdown",
+                reply_markup=keyboard,
+            )
     except ValueError as e:
         # Handle validation errors from the service
         error_msg = str(e)
