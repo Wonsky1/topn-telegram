@@ -11,6 +11,7 @@ from aiogram.fsm.storage.redis import RedisStorage
 
 from bot.fsm import StartMonitoringForm, StatusForm, StopMonitoringForm
 from bot.handlers import admin as admin_handlers
+from bot.handlers import districts as districts_handlers
 from bot.handlers import monitoring as monitoring_handlers
 from bot.keyboards import get_main_menu_keyboard
 from core.config import settings
@@ -61,6 +62,9 @@ async def telegram_main():
     mon_service = get_monitoring_service()
     repo = get_repository()
     notifier = Notifier(bot, mon_service, redis_client)
+
+    # Include routers for callback query handlers
+    dp.include_router(districts_handlers.router)
 
     # Register FSM handlers
     dp.message.register(

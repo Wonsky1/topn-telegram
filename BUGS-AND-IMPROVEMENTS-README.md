@@ -99,3 +99,4 @@ Below is the recommended order for tackling improvements and bug fixes. Each ite
 14. Add support for other languages
     Expands user base after core system is robust.
 15. Make topn db as a pip package
+16. make beter ui (monitorings -> names of monitorings - show status (bot response) -> stop/edit)
