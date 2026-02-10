@@ -2,8 +2,14 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade -r requirements.txt
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+# Copy dependency files
+COPY pyproject.toml uv.lock ./
+
+# Install dependencies using uv (to system Python)
+RUN uv sync --frozen --no-dev
 
 COPY . .
 
@@ -19,4 +25,4 @@ ENV REDIS_HOST=${REDIS_HOST}
 ENV REDIS_PORT=${REDIS_PORT}
 ENV TOPN_DB_BASE_URL=${TOPN_DB_BASE_URL}
 
-CMD ["python", "main.py"]
+CMD ["uv", "run", "main.py"]

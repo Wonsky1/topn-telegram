@@ -1,0 +1,25 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+
+  "dependencyDashboard": true,
+
+  "schedule": ["monthly"],
+
+  "separateMajorMinor": true,
+
+  "packageRules": [
+    {
+      "matchUpdateTypes": ["patch"],
+      "groupName": "patch updates"
+    }
+  ],
+
+  "postUpgradeTasks": {
+    "commands": [
+      "curl -LsSf https://astral.sh/uv/install.sh | sh",
+      "uv lock"
+    ],
+    "fileFilters": ["uv.lock"]
+  }
+}
