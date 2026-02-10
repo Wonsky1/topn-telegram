@@ -4,6 +4,8 @@
 
   "dependencyDashboard": true,
 
+  "baseBranches": ["stage"],
+
   "schedule": ["monthly"],
 
   "separateMajorMinor": true,
