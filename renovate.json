@@ -1,28 +1,33 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["config:recommended"],
-
+  "extends": [
+    "config:recommended"
+  ],
   "dependencyDashboard": true,
-
-  "baseBranches": ["stage"],
-
-  "schedule": ["monthly"],
-
+  "baseBranchPatterns": [
+    "stage"
+  ],
+  "schedule": [
+    "monthly"
+  ],
   "separateMajorMinor": true,
-
   "packageRules": [
     {
-      "matchUpdateTypes": ["patch"],
+      "matchUpdateTypes": [
+        "patch"
+      ],
       "groupName": "patch updates"
     }
   ],
-
   "postUpgradeTasks": {
-    "commands": ["uv lock"],
-    "fileFilters": ["uv.lock"],
+    "commands": [
+      "uv lock"
+    ],
+    "fileFilters": [
+      "uv.lock"
+    ],
     "executionMode": "branch"
   },
-
   "constraints": {
     "uv": ">=0.5.0"
   }
