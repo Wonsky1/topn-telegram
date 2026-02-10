@@ -1,0 +1,26 @@
+[project]
+name = "topn-telegram"
+version = "0.1.0"
+description = "topn telegram"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "aiogram==3.22.0",
+    "pydantic-settings==2.11.0",
+    "validators==0.35.0",
+    "pytz==2025.2",
+    "redis==7.0.1",
+    "httpx==0.28.1",
+    "psycopg2-binary==2.9.11",
+    "aiohttp==3.11.0",
+    "Pillow==12.0.0",
+    "psutil==7.2.1",
+    "unidecode>=1.4.0",
+]
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.5.1",
+    "pytest>=9.0.2",
+    "pytest-cov>=7.0.0",
+]
