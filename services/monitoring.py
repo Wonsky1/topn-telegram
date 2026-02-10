@@ -28,6 +28,8 @@ class MonitoringSpec:
     chat_id: str
     name: str
     url: str  # *canonical* URL produced by UrlValidator.normalize()
+    city_id: int | None = None  # Optional city ID for location filtering
+    allowed_district_ids: list[int] | None = None  # Optional district filter
 
 
 class MonitoringService:  # noqa: D101 – simple name
@@ -65,7 +67,13 @@ class MonitoringService:  # noqa: D101 – simple name
         if await self._repo.task_exists(spec.chat_id, name):
             raise ValueError("Duplicate name for this chat.")
         # Everything OK → persist
-        await self._repo.create_task(spec.chat_id, name, url)
+        await self._repo.create_task(
+            chat_id=spec.chat_id,
+            name=name,
+            url=url,
+            city_id=spec.city_id,
+            allowed_district_ids=spec.allowed_district_ids,
+        )
         logger.info("Monitoring '%s' created for chat_id %s", name, spec.chat_id)
 
     async def remove_monitoring(self, chat_id: str, name: str) -> None:

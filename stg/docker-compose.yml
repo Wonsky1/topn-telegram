@@ -73,4 +73,10 @@ services:
 
 volumes:
   postgres_data:
+    name: topn_stg_postgres_data
   redis_data:
+    name: topn_stg_redis_data
+
+networks:
+  default:
+    name: topn_stg_network

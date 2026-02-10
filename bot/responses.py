@@ -11,6 +11,24 @@ SEND_NAME = "Great! Now send a name for this monitoring (max 64 characters)"
 INVALID_NAME = "❌ Name must be between 1 and 64 characters. Try again"
 DUPLICATE_NAME = "❌ You already have monitoring with this name. Choose another name"
 MONITORING_CREATED = "✅ Monitoring *{name}* started!\n🔗 [View url]({url})"
+MONITORING_CREATED_WITH_DISTRICTS = (
+    "✅ Monitoring *{name}* started!\n"
+    "🔗 [View url]({url})\n"
+    "🏘 Filtering: {district_count} district(s) selected"
+)
+
+# --- District Selection ---
+DISTRICTS_FOUND = (
+    "🏘 Found *{count}* districts in *{city}*.\n\n"
+    "Select districts you want to receive notifications for.\n"
+    "Empty selection = all districts."
+)
+DISTRICTS_SELECTION_HEADER = (
+    "🏘 *{city}* — Select districts (page {page}/{total_pages}):"
+)
+DISTRICTS_SAVED = "✅ District filter saved: {count} district(s) selected"
+DISTRICTS_SKIP = "Skipping district filter — you'll receive all listings"
+NO_DISTRICTS_AVAILABLE = "No districts found for this city yet. Skipping filter."
 
 # --- Monitoring Stop ---
 STOPPED = "🛑 Monitoring *{name}* stopped"

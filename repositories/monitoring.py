@@ -39,7 +39,12 @@ class MonitoringRepositoryProtocol(Protocol):
         """Return True if the *url* is already monitored for *chat_id*."""
 
     async def create_task(
-        self, chat_id: str, name: str, url: str
+        self,
+        chat_id: str,
+        name: str,
+        url: str,
+        city_id: int | None = None,
+        allowed_district_ids: list[int] | None = None,
     ) -> MonitoringTask:  # noqa: D401
         """Persist a new monitoring task and return the model instance."""
 
@@ -111,10 +116,26 @@ class MonitoringRepository(MonitoringRepositoryProtocol):
         return await MonitoringTask.has_url_for_chat(self._client, chat_id, url)
 
     async def create_task(
-        self, chat_id: str, name: str, url: str
+        self,
+        chat_id: str,
+        name: str,
+        url: str,
+        city_id: int | None = None,
+        allowed_district_ids: list[int] | None = None,
     ) -> MonitoringTask:  # noqa: D401
         """Persist a new monitoring task and return the model instance."""
-        task_data = {"chat_id": chat_id, "name": name, "url": url, "is_active": True}
+        task_data = {
+            "chat_id": chat_id,
+            "name": name,
+            "url": url,
+        }
+
+        # Add optional location filtering
+        if city_id is not None:
+            task_data["city_id"] = city_id
+        if allowed_district_ids:
+            task_data["allowed_district_ids"] = allowed_district_ids
+
         try:
             response = await self._client.create_task(task_data)
             return MonitoringTask(response.get("task", response))
