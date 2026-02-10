@@ -18,10 +18,12 @@
   ],
 
   "postUpgradeTasks": {
-    "commands": [
-      "curl -LsSf https://astral.sh/uv/install.sh | sh",
-      "uv lock"
-    ],
-    "fileFilters": ["uv.lock"]
+    "commands": ["uv lock"],
+    "fileFilters": ["uv.lock"],
+    "executionMode": "branch"
+  },
+
+  "constraints": {
+    "uv": ">=0.5.0"
   }
 }
