@@ -29,6 +29,9 @@
     ],
     "executionMode": "branch"
   },
+  "allowedCommands": [
+    "uv lock"
+  ],
   "constraints": {
     "uv": ">=0.5.0"
   }
