@@ -60,14 +60,9 @@ class TestMonitoringRepository(IsolatedAsyncioTestCase):
         items = await self.repo.items_to_send(MagicMock(id=7))
         self.assertEqual(items, [1, 2, 3])
 
-    async def test_update_last_got_item_updates_each_task(self):
-        # list_tasks() internally calls the client again; set up its return
-        self.client.get_tasks_by_chat_id.return_value = {
-            "tasks": [{"id": 1}, {"id": 2}]
-        }
-        await self.repo.update_last_got_item("77")
-        self.client.update_last_got_item_timestamp.assert_any_await(1)
-        self.client.update_last_got_item_timestamp.assert_any_await(2)
+    async def test_update_last_got_item_updates_specific_task(self):
+        await self.repo.update_last_got_item(42)
+        self.client.update_last_got_item_timestamp.assert_awaited_once_with(42)
 
     async def test_update_last_updated_sets_timestamp(self):
         with patch("repositories.monitoring.now_warsaw") as n:
@@ -125,9 +120,8 @@ class TestMonitoringRepository(IsolatedAsyncioTestCase):
         self.assertEqual(items, [])
 
     async def test_update_last_got_item_handles_exception(self):
-        # If listing tasks fails, method should swallow the error
-        self.client.get_tasks_by_chat_id.side_effect = Exception("u-error")
-        await self.repo.update_last_got_item("77")
+        self.client.update_last_got_item_timestamp.side_effect = Exception("u-error")
+        await self.repo.update_last_got_item(42)
 
     async def test_update_last_updated_handles_exception(self):
         self.client.update_task.side_effect = Exception("upd-error")
