@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "aiogram==3.22.0",
-    "pydantic-settings==2.11.0",
+    "pydantic-settings==2.13.1",
     "validators==0.35.0",
     "pytz==2025.2",
     "redis==7.0.1",
