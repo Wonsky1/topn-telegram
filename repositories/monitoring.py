@@ -61,8 +61,8 @@ class MonitoringRepositoryProtocol(Protocol):
     async def items_to_send(self, task: MonitoringTask):  # noqa: D401
         """Return new items that should be sent for *task*."""
 
-    async def update_last_got_item(self, chat_id: str) -> None:  # noqa: D401
-        """Update `last_got_item` timestamp after sending items."""
+    async def update_last_got_item(self, task_id: int) -> None:  # noqa: D401
+        """Update `last_got_item` timestamp for a specific task after sending items."""
 
     async def update_last_updated(self, task: MonitoringTask) -> None:  # noqa: D401
         """Update `last_updated` timestamp after checking for items."""
@@ -181,15 +181,12 @@ class MonitoringRepository(MonitoringRepositoryProtocol):
             self._logger.error(f"Error getting items to send: {e}")
             return []
 
-    async def update_last_got_item(self, chat_id: str) -> None:  # noqa: D401
-        """Update `last_got_item` timestamp after sending items."""
+    async def update_last_got_item(self, task_id: int) -> None:  # noqa: D401
+        """Update `last_got_item` timestamp for a specific task after sending items."""
         try:
-            # Find the task by chat_id first, then update
-            tasks = await self.list_tasks(chat_id)
-            for task in tasks:
-                await self._client.update_last_got_item_timestamp(task.id)
+            await self._client.update_last_got_item_timestamp(task_id)
         except Exception as e:
-            self._logger.error(f"Error updating last_got_item: {e}")
+            self._logger.error(f"Error updating last_got_item for task {task_id}: {e}")
 
     async def update_last_updated(self, task: MonitoringTask) -> None:  # noqa: D401
         """Update `last_updated` timestamp after checking for items."""

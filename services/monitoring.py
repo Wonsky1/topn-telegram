@@ -96,8 +96,8 @@ class MonitoringService:  # noqa: D101 – simple name
     async def items_to_send(self, task):
         return await self._repo.items_to_send(task)
 
-    async def update_last_got_item(self, chat_id: str) -> None:
-        await self._repo.update_last_got_item(chat_id)
+    async def update_last_got_item(self, task_id: int) -> None:
+        await self._repo.update_last_got_item(task_id)
 
     async def update_last_updated(self, task) -> None:
         await self._repo.update_last_updated(task)

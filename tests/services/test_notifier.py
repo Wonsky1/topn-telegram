@@ -214,7 +214,7 @@ class TestNotifier(IsolatedAsyncioTestCase):
         # Then per-item messages/photos
         bot.send_message.assert_awaited()  # for item without image
         bot.send_photo.assert_awaited()  # for item with image
-        svc.update_last_got_item.assert_awaited_with("1")
+        svc.update_last_got_item.assert_awaited_with(7)
         svc.update_last_updated.assert_awaited_with(task)
 
     async def test_run_periodically_breaks(self):
