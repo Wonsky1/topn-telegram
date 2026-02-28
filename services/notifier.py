@@ -100,7 +100,7 @@ class Notifier:  # noqa: D101 – simple name
                 await asyncio.sleep(0.5)  # prevent Telegram Flood-wait
 
             # Persist bookkeeping timestamps
-            await self._svc.update_last_got_item(task.chat_id)
+            await self._svc.update_last_got_item(task.id)
             await self._svc.update_last_updated(task)
 
     async def _send_item_with_image(
